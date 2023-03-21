@@ -1,0 +1,10 @@
+name: Quizzer
+version: '${project.version}'
+main: com.th7bo.quizzer.Quizzer
+api-version: 1.19
+authors: [ Th7bo ]
+description: A trial plugin made for DevRoom
+website: https://th7bo.com
+commands:
+  quizzer:
+    description: The main command
