@@ -3,6 +3,7 @@ package com.th7bo.quizzer.api.questions;
 import com.th7bo.quizzer.Quizzer;
 import com.th7bo.quizzer.utils.Misc;
 import lombok.Getter;
+import lombok.Setter;
 import org.bukkit.Bukkit;
 import org.bukkit.boss.BarColor;
 import org.bukkit.boss.BarStyle;
@@ -10,27 +11,33 @@ import org.bukkit.boss.BossBar;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.scheduler.BukkitRunnable;
+import org.bukkit.scheduler.BukkitTask;
 
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Objects;
 import java.util.Random;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class QuestionHelper {
 
     Quizzer instance;
     ArrayList<Category> categories = new ArrayList<Category>();
-    long started;
+
+    @Getter @Setter
+    long started = 0;
     @Getter
     BossBar bossbar;
 
+    @Getter @Setter
+    Question currentQuestion = null;
 
-    Question currentQuestion;
+    BukkitTask run;
 
     public QuestionHelper() {
         instance = Quizzer.getInstance();
-        bossbar = Bukkit.createBossBar("test", BarColor.BLUE, BarStyle.SOLID);
+        bossbar = Bukkit.createBossBar("test", BarColor.YELLOW, BarStyle.SOLID);
         new BukkitRunnable() {
             @Override
             public void run() {
@@ -49,7 +56,26 @@ public class QuestionHelper {
         }.runTaskTimerAsynchronously(instance, 20 * 60 * 5, 20 * 60 * 5);
     }
 
-    private void startQuestion() {
+    public void reload() throws IOException {
+        currentQuestion = null;
+        bossbar.removeAll();
+        new BukkitRunnable() {
+            @Override
+            public void run() {
+                try {
+                    loadConfiguration();
+                } catch (IOException e) {
+                    throw new RuntimeException(e);
+                }
+            }
+        }.runTaskLater(instance, 40);
+    }
+
+    public void startQuestion() {
+        if ((System.currentTimeMillis() - started) / 1000 <= 2) return;
+        if(run != null)
+            run.cancel();
+        bossbar.removeAll();
         started = System.currentTimeMillis();
         Category cat = categories.get(new Random().nextInt(categories.size()));
         currentQuestion = cat.getQuestions().get(new Random().nextInt(cat.getQuestions().size()));
@@ -65,17 +91,28 @@ public class QuestionHelper {
         ArrayList<String> dots = new ArrayList<String>();
         for(int x = 0; x <= currentQuestion.getAnswer().length() - 1; x++) {
             if (currentQuestion.getAnswer().charAt(x) == ' ') dots.add(" ");
-            else dots.add("*");
+            else dots.add(".");
         }
         StringBuilder title = new StringBuilder();
         for (String s : dots) {
             title.append(s);
         }
-        bossbar.setTitle(Misc.Color("&6Hints: &e" + title.toString() + " &7(05:00)"));
-        new BukkitRunnable() {
+        bossbar.setTitle(Misc.Color("&6Hints: &e" + title.toString() + " &7(04:00)"));
+        run = new BukkitRunnable() {
             @Override
             public void run() {
+                String lastUpdate = "";
                 if ((System.currentTimeMillis() - started) / 1000 >= 60 * 4) {
+                    bossbar.removeAll();
+                    Bukkit.broadcastMessage(Misc.Color(""));
+                    Bukkit.broadcastMessage(Misc.Color("&6&lQuizzer &8- &7:("));
+                    Bukkit.broadcastMessage(Misc.Color(""));
+                    Bukkit.broadcastMessage(Misc.Color("&8| &eNo-one got the answer on time..."));
+                    Bukkit.broadcastMessage(Misc.Color("&8| &eAnswer: &f" + currentQuestion.getAnswer()));
+                    Bukkit.broadcastMessage(Misc.Color(""));
+                    currentQuestion = null;
+                    cancel();
+                } else if (currentQuestion == null ) {
                     bossbar.removeAll();
                     cancel();
                 } else {
@@ -83,27 +120,106 @@ public class QuestionHelper {
                         bossbar.addPlayer(p);
                     });
 
-                    long time_left = 60 * 5 - (System.currentTimeMillis() - started) / 1000;
+                    long time_left = 60 * 4 - (System.currentTimeMillis() - started) / 1000;
                     int minutes = (int) Math.floor(time_left / 60);
                     long seconds = (time_left) - (minutes * 60L);
                     String secondsString = seconds < 10 ? "0" + seconds : "" + seconds;
                     StringBuilder title = new StringBuilder();
-                    if (seconds == 30 || (seconds == 0 && minutes != 5)) {
-                        System.out.println("yes");
+                    if ((seconds == 30 || (seconds == 0 && minutes != 4)) && dots.contains(".") && !lastUpdate.equalsIgnoreCase(minutes + ":" + secondsString)) {
                         int change = new Random().nextInt(dots.size());
-                        System.out.println("Change: " + change);
-                        dots.forEach((s) -> {
-                            System.out.println("String: " + s);
-                        });
-                        if (!dots.get(change).equalsIgnoreCase("*")) {
-                            change = dots.indexOf("*");
-                            System.out.println("IndexOf *: " + change);
+                        if (!dots.get(change).equalsIgnoreCase(".")) {
+                            change = dots.indexOf(".");
                         }
                         dots.set(change, currentQuestion.getAnswer().charAt(change) + "");
                         for (String s : dots) {
                             title.append(s);
                         }
                         bossbar.setTitle(Misc.Color("&6Hints: &e" + title.toString() + " &7(0" + minutes + ":" + secondsString + ")"));
+                        lastUpdate = minutes + ":" + secondsString;
+                    } else {
+                        for (String s : dots) {
+                            title.append(s);
+                        }
+                        bossbar.setTitle(Misc.Color("&6Hints: &e" + title.toString() + " &7(0" + minutes + ":" + secondsString + ")"));
+                    }
+                }
+            }
+        }.runTaskTimer(instance, 20, 20);
+    }
+
+    public void startQuestion(String category) {
+        if ((System.currentTimeMillis() - started) / 1000 <= 2) return;
+        AtomicInteger a = new AtomicInteger(-1);
+        Category cat = null;
+        for (Category cats : categories) {
+            System.out.println("Cat: " + cats.getName() + " -> '" + category + "'");
+            if (cats.getName().equalsIgnoreCase(category)) {
+                cat = cats;
+            }
+        }
+        if (cat == null) return;
+        if(run != null)
+            run.cancel();
+        bossbar.removeAll();
+        started = System.currentTimeMillis();
+        currentQuestion = cat.getQuestions().get(new Random().nextInt(cat.getQuestions().size()));
+        Bukkit.broadcastMessage(Misc.Color(""));
+        Bukkit.broadcastMessage(Misc.Color("&6&lQuizzer &8- &7A new quiz has started! &8(" + cat.getName() + ")"));
+        Bukkit.broadcastMessage(Misc.Color(""));
+        Bukkit.broadcastMessage(Misc.Color("&8| &eQuestion: &f" + currentQuestion.getQuestion()));
+        Bukkit.broadcastMessage(Misc.Color("&8| &eLetters: &f" + currentQuestion.getAnswer().length()));
+        Bukkit.broadcastMessage(Misc.Color(""));
+        Bukkit.getOnlinePlayers().forEach((p) -> {
+            bossbar.addPlayer(p);
+        });
+        ArrayList<String> dots = new ArrayList<String>();
+        for(int x = 0; x <= currentQuestion.getAnswer().length() - 1; x++) {
+            if (currentQuestion.getAnswer().charAt(x) == ' ') dots.add(" ");
+            else dots.add(".");
+        }
+        StringBuilder title = new StringBuilder();
+        for (String s : dots) {
+            title.append(s);
+        }
+        bossbar.setTitle(Misc.Color("&6Hints: &e" + title.toString() + " &7(04:00)"));
+        run = new BukkitRunnable() {
+            @Override
+            public void run() {
+                String lastUpdate = "";
+                if ((System.currentTimeMillis() - started) / 1000 >= 60 * 4) {
+                    bossbar.removeAll();
+                    Bukkit.broadcastMessage(Misc.Color(""));
+                    Bukkit.broadcastMessage(Misc.Color("&6&lQuizzer &8- &7:("));
+                    Bukkit.broadcastMessage(Misc.Color(""));
+                    Bukkit.broadcastMessage(Misc.Color("&8| &eNo-one got the answer on time..."));
+                    Bukkit.broadcastMessage(Misc.Color("&8| &eAnswer: &f" + currentQuestion.getAnswer()));
+                    Bukkit.broadcastMessage(Misc.Color(""));
+                    currentQuestion = null;
+                    cancel();
+                } else if (currentQuestion == null ) {
+                    bossbar.removeAll();
+                    cancel();
+                } else {
+                    Bukkit.getOnlinePlayers().forEach((p) -> {
+                        bossbar.addPlayer(p);
+                    });
+
+                    long time_left = 60 * 4 - (System.currentTimeMillis() - started) / 1000;
+                    int minutes = (int) Math.floor(time_left / 60);
+                    long seconds = (time_left) - (minutes * 60L);
+                    String secondsString = seconds < 10 ? "0" + seconds : "" + seconds;
+                    StringBuilder title = new StringBuilder();
+                    if ((seconds == 30 || (seconds == 0 && minutes != 4)) && dots.contains(".") && !lastUpdate.equalsIgnoreCase(minutes + ":" + secondsString)) {
+                        int change = new Random().nextInt(dots.size());
+                        if (!dots.get(change).equalsIgnoreCase(".")) {
+                            change = dots.indexOf(".");
+                        }
+                        dots.set(change, currentQuestion.getAnswer().charAt(change) + "");
+                        for (String s : dots) {
+                            title.append(s);
+                        }
+                        bossbar.setTitle(Misc.Color("&6Hints: &e" + title.toString() + " &7(0" + minutes + ":" + secondsString + ")"));
+                        lastUpdate = minutes + ":" + secondsString;
                     } else {
                         for (String s : dots) {
                             title.append(s);
@@ -121,7 +237,9 @@ public class QuestionHelper {
             if(!f.createNewFile()) return this;
         }
         FileConfiguration fileConfiguration = YamlConfiguration.loadConfiguration(f);
-        if (fileConfiguration.getConfigurationSection("categories") == null) return this;
+        if (fileConfiguration.getConfigurationSection("categories") == null) {
+            throw new RuntimeException("Categories are not set-up");
+        }
         for (String category : Objects.requireNonNull(fileConfiguration.getConfigurationSection("categories")).getKeys(false)) {
             ArrayList<Question> questions = new ArrayList<Question>();
             for (String questionString : Objects.requireNonNull(fileConfiguration.getConfigurationSection("categories." + category)).getKeys(false)) {
