@@ -239,6 +239,8 @@ public class QuestionHelper {
     }
 
     public QuestionHelper loadConfiguration() throws IOException {
+        File folder = new File("plugins", "Quizzer");
+        if(!folder.exists()) folder.mkdirs();
         File f = new File(instance.getDataFolder(), "config.yml");
         if(!f.exists()) {
             if(!f.createNewFile()) return this;
