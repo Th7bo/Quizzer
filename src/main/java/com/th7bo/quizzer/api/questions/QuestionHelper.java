@@ -34,6 +34,7 @@ public class QuestionHelper {
     Question currentQuestion = null;
 
     BukkitTask run;
+    BukkitTask main;
 
     public QuestionHelper() {
         instance = Quizzer.getInstance();
@@ -48,7 +49,7 @@ public class QuestionHelper {
 
     private void startQuestionRunnable() {
         startQuestion();
-        new BukkitRunnable() {
+        main = new BukkitRunnable() {
             @Override
             public void run() {
                 startQuestion();
@@ -58,23 +59,24 @@ public class QuestionHelper {
 
     public void reload() throws IOException {
         currentQuestion = null;
+        if(run != null) {
+            run.cancel();
+            run = null;
+        }
         bossbar.removeAll();
-        new BukkitRunnable() {
-            @Override
-            public void run() {
-                try {
-                    loadConfiguration();
-                } catch (IOException e) {
-                    throw new RuntimeException(e);
-                }
-            }
-        }.runTaskLater(instance, 40);
+        loadConfiguration();
     }
 
     public void startQuestion() {
         if ((System.currentTimeMillis() - started) / 1000 <= 2) return;
-        if(run != null)
+        if(run != null) {
             run.cancel();
+            run = null;
+            main.cancel();
+            main = null;
+            startQuestionRunnable();
+            return;
+        }
         bossbar.removeAll();
         started = System.currentTimeMillis();
         Category cat = categories.get(new Random().nextInt(categories.size()));
@@ -88,7 +90,7 @@ public class QuestionHelper {
         Bukkit.getOnlinePlayers().forEach((p) -> {
             bossbar.addPlayer(p);
         });
-        ArrayList<String> dots = new ArrayList<String>();
+        ArrayList<String> dots = new ArrayList<>();
         for(int x = 0; x <= currentQuestion.getAnswer().length() - 1; x++) {
             if (currentQuestion.getAnswer().charAt(x) == ' ') dots.add(" ");
             else dots.add(".");
@@ -149,17 +151,22 @@ public class QuestionHelper {
 
     public void startQuestion(String category) {
         if ((System.currentTimeMillis() - started) / 1000 <= 2) return;
+        if(run != null) {
+            run.cancel();
+            run = null;
+            main.cancel();
+            main = null;
+            startQuestionRunnable();
+            return;
+        }
         AtomicInteger a = new AtomicInteger(-1);
         Category cat = null;
         for (Category cats : categories) {
-            System.out.println("Cat: " + cats.getName() + " -> '" + category + "'");
             if (cats.getName().equalsIgnoreCase(category)) {
                 cat = cats;
             }
         }
         if (cat == null) return;
-        if(run != null)
-            run.cancel();
         bossbar.removeAll();
         started = System.currentTimeMillis();
         currentQuestion = cat.getQuestions().get(new Random().nextInt(cat.getQuestions().size()));

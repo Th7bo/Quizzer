@@ -35,21 +35,16 @@ public class QuizzerCommand implements CommandExecutor, TabCompleter {
             sendHelp(sender);
             return true;
         }
-        if (args[0].equalsIgnoreCase("reload")) {
+        if (args[0].equalsIgnoreCase("reload") && sender.hasPermission("quizzer.reload")) {
             sender.sendMessage(Misc.Color("&aReloading!"));
             try {
                 Quizzer.getInstance().getQuestionHelper().reload();
-            } catch (IOException e) {
                 sender.sendMessage(Misc.Color("&cSomething went wrong, please notify an admin to check console!"));
+            } catch (Exception e) {
                 throw new RuntimeException(e);
             }
-            new BukkitRunnable() {
-                @Override
-                public void run() {
-                    sender.sendMessage(Misc.Color("&aReloaded!"));
-                }
-            }.runTaskLater(Quizzer.getInstance(), 40);
-        } else if (args[0].equalsIgnoreCase("start")) {
+            sender.sendMessage(Misc.Color("&aReloaded!"));
+        } else if (args[0].equalsIgnoreCase("start") && sender.hasPermission("quizzer.start")) {
             if(args.length >= 2) {
                 StringBuilder cat = new StringBuilder();
                 for (int x = 1; x < args.length; x++) {
